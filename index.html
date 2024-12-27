@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Upload Excel</title>
+</head>
+<body>
+  <h1>Upload Excel File</h1>
+  <form id="uploadForm" enctype="multipart/form-data">
+    <input type="file" name="file" id="fileInput" required />
+    <button type="submit">Upload File</button>
+  </form>
+  
+  <p id="statusMessage"></p>
+
+  <script>
+    const form = document.getElementById('uploadForm');
+    const statusMessage = document.getElementById('statusMessage');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      
+      const formData = new FormData();
+      formData.append('file', document.getElementById('fileInput').files[0]);
+
+      try {
+        statusMessage.textContent = 'Uploading...';
+        const response = await fetch('/upload', {
+          method: 'POST',
+          body: formData
+        });
+        
+        const result = await response.json();
+        
+        if (response.ok) {
+          statusMessage.style.color = 'green';
+          statusMessage.textContent = result.message || 'File uploaded and data saved!';
+        } else {
+          statusMessage.style.color = 'red';
+          statusMessage.textContent = result.error || 'An error occurred.';
+        }
+      } catch (error) {
+        console.error('Error uploading file:', error);
+        statusMessage.style.color = 'red';
+        statusMessage.textContent = 'Network error or server failure.';
+      }
+    });
+  </script>
+</body>
+</html>
