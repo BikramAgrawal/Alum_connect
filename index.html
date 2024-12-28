@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Upload Excel</title>
+  <title>Upload Excel and Download Report</title>
 </head>
 <body>
   <h1>Upload Excel File</h1>
@@ -14,10 +14,15 @@
   
   <p id="statusMessage"></p>
 
+  <h2>Download Report</h2>
+  <button id="downloadReport">Download PDF Report</button>
+
   <script>
     const form = document.getElementById('uploadForm');
     const statusMessage = document.getElementById('statusMessage');
+    const downloadReportButton = document.getElementById('downloadReport');
 
+    // Handle file upload
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       
@@ -45,6 +50,11 @@
         statusMessage.style.color = 'red';
         statusMessage.textContent = 'Network error or server failure.';
       }
+    });
+
+    // Handle PDF download
+    downloadReportButton.addEventListener('click', () => {
+      window.location.href = '/download-report';
     });
   </script>
 </body>

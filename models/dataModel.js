@@ -6,8 +6,7 @@ const recordSchema = new mongoose.Schema({
   company: { type: String, required: true },
   dateUpdated: { type: Date, default: Date.now },
   batch: { type: Number, required: true },
-  status: { type: String, required: true },
-  requestUpdate: { type: String, default: "Request Update" }
+  status: { type: String, required: true }
 });
 
 const Data = mongoose.model('Data', recordSchema);
