@@ -14,12 +14,23 @@
   
   <p id="statusMessage"></p>
 
+  <h2>Request an Update</h2>
+  <form id="emailForm">
+    <label for="recordId">Enter Name to Request Update:</label>
+    <input type="text" id="recordId" name="recordId" required />
+    <button type="submit">Request Update</button>
+  </form>
+  
+  <p id="emailStatusMessage"></p>
+
   <h2>Download Report</h2>
   <button id="downloadReport">Download PDF Report</button>
 
   <script>
     const form = document.getElementById('uploadForm');
+    const emailForm = document.getElementById('emailForm');
     const statusMessage = document.getElementById('statusMessage');
+    const emailStatusMessage = document.getElementById('emailStatusMessage');
     const downloadReportButton = document.getElementById('downloadReport');
 
     // Handle file upload
@@ -55,6 +66,45 @@
     // Handle PDF download
     downloadReportButton.addEventListener('click', () => {
       window.location.href = '/download-report';
+    });
+
+    // Handle email request
+    emailForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const recordId = document.getElementById('recordId').value;
+
+      if (!recordId) {
+        emailStatusMessage.style.color = 'red';
+        emailStatusMessage.textContent = 'Please enter a valid record ID.';
+        return;
+      }
+
+      emailStatusMessage.textContent = 'Sending email request...';
+
+      try {
+        const response = await fetch('/request-update', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ name: recordId.trim() }),
+        });
+
+        const result = await response.json();
+
+        if (response.ok) {
+          emailStatusMessage.style.color = 'green';
+          emailStatusMessage.textContent = 'Email sent successfully!';
+        } else {
+          emailStatusMessage.style.color = 'red';
+          emailStatusMessage.textContent = result.error || 'Failed to send email.';
+        }
+      } catch (error) {
+        console.error('Error sending email:', error);
+        emailStatusMessage.style.color = 'red';
+        emailStatusMessage.textContent = 'Network error or server failure.';
+      }
     });
   </script>
 </body>

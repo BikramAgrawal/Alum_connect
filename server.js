@@ -4,29 +4,31 @@ const path = require('path');
 const mongoose = require('mongoose');
 const fs = require('fs');
 const xlsx = require('xlsx');
-const PDFDocument = require('pdfkit'); // For generating PDFs
-const Data = require('./models/dataModel'); // Your Mongoose data model
+const PDFDocument = require('pdfkit');
+const nodemailer = require('nodemailer');
+const Data = require('./models/dataModel');
+require('dotenv').config();
 
 const app = express();
 const PORT = 3000;
 
+// Middleware
+app.use(express.json());
+
 // MongoDB connection
 mongoose
-  .connect('mongodb://127.0.0.1:27017/Alum_connect', {
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
-  })
+  .connect('mongodb://127.0.0.1:27017/Alum_connect', { useNewUrlParser: true })
   .then(() => console.log('Connected to MongoDB'))
   .catch((err) => console.error('MongoDB connection error:', err));
 
-// Set up Multer for file uploads
+// Multer setup for file uploads
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, './uploads/'); // Upload folder
+    cb(null, './uploads/');
   },
   filename: (req, file, cb) => {
-    cb(null, Date.now() + path.extname(file.originalname)); // Unique filenames
-  },
+    cb(null, Date.now() + path.extname(file.originalname));
+  }
 });
 const upload = multer({ storage });
 
@@ -46,39 +48,78 @@ app.post('/upload', upload.single('file'), async (req, res) => {
     return res.status(400).json({ error: 'No file uploaded' });
   }
 
-  // Parse Excel file and save data to MongoDB
   const workbook = xlsx.readFile(req.file.path);
-  const sheet_name_list = workbook.SheetNames;
-  const data = xlsx.utils.sheet_to_json(workbook.Sheets[sheet_name_list[0]]);
+  const sheetName = workbook.SheetNames[0];
+  const data = xlsx.utils.sheet_to_json(workbook.Sheets[sheetName]);
 
   try {
-    // Process each record to check if it already exists
     const uniqueData = [];
-
     for (const record of data) {
-      const existingRecord = await Data.findOne({ name: record.name, batch: record.batch });
+      const existingRecord = await Data.findOne({
+        name: record.name.trim(),  // Ensure trimming spaces from name
+        batch: record.batch
+      });
       if (!existingRecord) {
-        uniqueData.push(record); // Only add records that don't already exist
+        uniqueData.push(record);
       }
     }
 
     if (uniqueData.length > 0) {
-      const insertedData = await Data.insertMany(uniqueData);
-      console.log('Data inserted:', insertedData);
+      await Data.insertMany(uniqueData);
       res.status(200).json({ message: 'File uploaded and data saved!' });
     } else {
       res.status(200).json({ message: 'No new data to save (all data already exists)' });
     }
-
   } catch (error) {
     console.error('Error inserting data:', error);
     res.status(500).json({ error: 'Failed to save data to database' });
+  } finally {
+    fs.unlinkSync(req.file.path); // Remove the file after processing
   }
-  
-  fs.unlinkSync(req.file.path); // Clean up the file
 });
 
-// Generate PDF report endpoint
+// Email sender to request update
+app.post('/request-update', async (req, res) => {
+  const { name } = req.body;
+
+  if (!name) {
+    return res.status(400).json({ error: 'Name is required' });
+  }
+
+  try {
+    // Trim input name and ensure case-insensitive search
+    const record = await Data.findOne({
+      name: new RegExp(`^${name.trim()}$`, 'i')  // Trim spaces and match case-insensitively
+    });
+
+    if (!record) {
+      return res.status(404).json({ error: 'Record not found' });
+    }
+
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS
+      }
+    });
+
+    const mailOptions = {
+      from: process.env.EMAIL_USER,
+      to: record.email,
+      subject: 'Request for Update',
+      text: `Dear ${record.name},\n\nWe kindly request you to update your details for AlumConnect.\n\nThank you,\nAlumConnect Team`
+    };
+
+    await transporter.sendMail(mailOptions);
+    res.status(200).json({ message: 'Email sent successfully' });
+  } catch (error) {
+    console.error('Error sending email:', error);
+    res.status(500).json({ error: 'Failed to send email' });
+  }
+});
+
+// Generate PDF report
 app.get('/download-report', async (req, res) => {
   try {
     const records = await Data.find().sort({ status: 1 });
@@ -92,98 +133,20 @@ app.get('/download-report', async (req, res) => {
     res.setHeader('Content-Disposition', 'attachment; filename=alumni_report.pdf');
     doc.pipe(res);
 
-    // Add title
-    doc.fontSize(18).font('Helvetica-Bold').text('AlumConnect Report', { align: 'center' });
-    doc.moveDown();
+    doc.fontSize(18).font('Helvetica-Bold').text('AlumConnect Report', { align: 'center' }).moveDown();
 
-    // Group data by status and calculate counts
     const groupedData = records.reduce((acc, record) => {
       acc[record.status] = acc[record.status] || [];
       acc[record.status].push(record);
       return acc;
     }, {});
 
-    // Render all cards (group counts) together
-    doc.fontSize(14).font('Helvetica-Bold').text('Group Summary:', { underline: true });
-    doc.moveDown(0.5);
-
     Object.entries(groupedData).forEach(([status, group]) => {
-      // Draw a card-like structure for each group's count
-      doc
-        .rect(50, doc.y, 250, 30) // Draw card outline
-        .fillAndStroke('#f0f0f0', '#000') // Background and border colors
-        .stroke();
-      doc
-        .fill('#000') // Reset text color
-        .font('Helvetica')
-        .text(`Status: ${status} - ${group.length}`, 55, doc.y + 8);
-      doc.moveDown(1.5); // Space between cards
-    });
-
-    doc.moveDown(1.5); // Add extra space after cards
-
-    // Table header and layout configuration
-    const tableHeaders = ['Sl. No', 'Name', 'Batch', 'Status', 'Company/University'];
-    const columnWidths = [50, 150, 100, 100, 150];
-    const startX = 50;
-    const rowHeight = 25;
-    let currentY = doc.y;
-
-    // Helper function to draw table headers
-    const drawTableHeader = () => {
-      let currentX = startX;
-      doc.fontSize(12).font('Helvetica-Bold');
-      tableHeaders.forEach((header, i) => {
-        doc.text(header, currentX + 5, currentY + 5, { width: columnWidths[i] - 10 });
-        currentX += columnWidths[i];
-        doc.moveTo(currentX, currentY).lineTo(currentX, currentY + rowHeight).stroke();
-      });
-      doc.moveTo(startX, currentY + rowHeight).lineTo(startX + columnWidths.reduce((a, b) => a + b), currentY + rowHeight).stroke();
-      currentY += rowHeight;
-    };
-
-    // Helper function to draw a row
-    const drawRow = (values) => {
-      let currentX = startX;
-      doc.fontSize(12).font('Helvetica');
-      values.forEach((value, i) => {
-        doc.text(String(value), currentX + 5, currentY + 5, { width: columnWidths[i] - 10 });
-        currentX += columnWidths[i];
-        doc.moveTo(currentX, currentY).lineTo(currentX, currentY + rowHeight).stroke();
-      });
-      doc.moveTo(startX, currentY + rowHeight).lineTo(startX + columnWidths.reduce((a, b) => a + b), currentY + rowHeight).stroke();
-      currentY += rowHeight;
-    };
-
-    // Render each group
-    Object.entries(groupedData).forEach(([status, group]) => {
-      if (currentY + rowHeight * (group.length + 3) > doc.page.height - 50) {
-        doc.addPage();
-        currentY = 50;
-      }
-
-      // Add status header
-      doc.fontSize(14).font('Helvetica-Bold').text(`Status: ${status}`, startX, currentY);
-      currentY += rowHeight;
-
-      // Draw outer border for the group
-      const groupHeight = rowHeight * (group.length + 1);
-      doc.rect(startX, currentY, columnWidths.reduce((a, b) => a + b), groupHeight).stroke();
-
-      // Draw table headers
-      drawTableHeader();
-
-      // Draw rows
+      doc.fontSize(14).font('Helvetica-Bold').text(`Status: ${status}`).moveDown(0.5);
       group.forEach((record, index) => {
-        if (currentY + rowHeight > doc.page.height - 50) {
-          doc.addPage();
-          currentY = 50;
-          drawTableHeader();
-        }
-        drawRow([index + 1, record.name, record.batch, record.status, record.company]);
+        doc.fontSize(10).text(`${index + 1}. ${record.name} - ${record.email} - ${record.batch} - ${record.company}`);
       });
-
-      currentY += rowHeight; // Space between groups
+      doc.moveDown(1);
     });
 
     doc.end();
@@ -195,5 +158,5 @@ app.get('/download-report', async (req, res) => {
 
 // Start server
 app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
+  console.log(`Server is running on port ${PORT}`);
 });

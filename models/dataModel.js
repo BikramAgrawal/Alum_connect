@@ -4,6 +4,7 @@ const recordSchema = new mongoose.Schema({
   slNo: { type: Number, required: true, unique: true },
   name: { type: String, required: true },
   company: { type: String, required: true },
+  email: { type: String, required: true }, // Added email column
   dateUpdated: { type: Date, default: Date.now },
   batch: { type: Number, required: true },
   status: { type: String, required: true }
